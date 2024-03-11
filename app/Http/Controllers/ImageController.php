@@ -51,38 +51,27 @@ class ImageController extends Controller
         return view('upload_form');
     }
 
-    // public function uploadWithS3(Request $request)
-    // {
-    //     $s3Client = new S3Client([
-    //         'version' => 'latest',
-    //         'region'  => config('filesystems.disks.s3.region'),
-    //         'credentials' => [
-    //             'key'    => config('filesystems.disks.s3.key'),
-    //             'secret' => config('filesystems.disks.s3.secret'),
-    //         ],
-    //     ]);
-    //     $bucket = config('filesystems.disks.s3.bucket');
-
-    //     try {
-    //         if ($request->hasFile('image')) {
-    //             $image = $request->file('image');
-    //             $fileName = uniqid('file_') . '.' . $image->getClientOriginalExtension();
-    //             Storage::disk('s3')->put($fileName, file_get_contents($image));
-    //             $imageUrl = Storage::disk('s3')->url($fileName);
-    //             $imageUrl = $s3Client->getObjectUrl($bucket, $fileName);
-
-    //             return redirect()->route('get.image',$fileName)->with('imageUrl', $imageUrl);
-    
-    //         }
-    //     } catch (\Exception $e) {
-    //         $this->logToCloudWatch("Error uploading file: " . $e->getMessage());
-    //         \Log::error($e->getMessage());
-    //         return response()->json(['error' => 'No image uploaded.'], 400);
-    //     }
-        
-    // }
 
     public function uploadWithS3(Request $request)
+    {
+        try {
+            if ($request->hasFile('image')) {
+                $image = $request->file('image');
+                $fileName = uniqid('file_') . '.' . $image->getClientOriginalExtension();
+                Storage::disk('s3')->put($fileName, file_get_contents($image));
+
+                $imageUrl = $this->createPresignedUrl($fileName);
+
+                return redirect()->route('get.image', $fileName)->with('imageUrl', $imageUrl);
+            }
+        } catch (\Exception $e) {
+            $this->logToCloudWatch("Error uploading file: " . $e->getMessage());
+            \Log::error($e->getMessage());
+            return response()->json(['error' => 'No image uploaded.'], 400);
+        }
+    }
+
+    private function createPresignedUrl($key)
     {
         $s3Client = new S3Client([
             'version' => 'latest',
@@ -95,30 +84,12 @@ class ImageController extends Controller
 
         $bucket = config('filesystems.disks.s3.bucket');
 
-        try {
-            if ($request->hasFile('image')) {
-                $image = $request->file('image');
-                $fileName = uniqid('file_') . '.' . $image->getClientOriginalExtension();
+        $command = $s3Client->getCommand('GetObject', [
+            'Bucket' => $bucket,
+            'Key'    => $key,
+        ]);
 
-                // Upload file to S3
-                Storage::disk('s3')->put($fileName, file_get_contents($image));
-
-                // Generate presigned URL
-                $command = $s3Client->getCommand('GetObject', [
-                    'Bucket' => $bucket,
-                    'Key' => $fileName,
-                ]);
-                $presignedUrl = $s3Client->createPresignedRequest($command, '+5 minutes')->getUri()->__toString();
-
-                // Redirect to the route with the presigned URL
-                //return redirect()->route('get.image', $fileName)->with('presignedUrl', $presignedUrl);
-                return view('file-detail')->with('presignedUrl', $presignedUrl);
-            }
-        } catch (\Exception $e) {
-            $this->logToCloudWatch("Error uploading file: " . $e->getMessage());
-            \Log::error($e->getMessage());
-            return response()->json(['error' => 'No image uploaded.'], 400);
-        }
+        return $s3Client->createPresignedRequest($command, '+5 minutes')->getUri()->__toString();
     }
 
     private function logToCloudWatch($message)

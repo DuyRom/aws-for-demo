@@ -6,6 +6,10 @@
     <title>Show Image</title>
 </head>
 <body>
-    <img src="{{ $presignedUrl }}" alt="Image">
+    @if (isset($imageUrl))
+        <img src="{{ $imageUrl }}" alt="Image">
+    @else
+        <p>No valid image URL available.</p>
+    @endif
 </body>
 </html>
